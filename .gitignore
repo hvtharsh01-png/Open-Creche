@@ -1,0 +1,9 @@
+node_modules
+dist
+*.log
+.env
+.claude
+
+# source proposal material (scans, decks) stays out of the repo
+*.pdf
+WhatsApp Image*.jpeg
