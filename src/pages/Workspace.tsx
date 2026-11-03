@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { tr } from '../lib/i18n';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { AlertTriangle, ArrowRight, BadgeCheck, CheckCircle2, FileUp, Play, Plus, ShieldCheck, Sparkles, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowRight, BadgeCheck, CheckCircle2, FilePlus2, FileUp, Play, Plus, ShieldCheck, Sparkles, Trash2 } from 'lucide-react';
 import { CHECKLIST, CHILDREN_PER_UNIT, CRECHE_TYPES, STAGES, STATES, fmtLakh, stageIndex, type CrecheType, type Priority } from '../../shared/types';
 import { placesIn } from '../../shared/geo';
 import { api, type NewOpportunity } from '../lib/api';
@@ -223,7 +223,100 @@ function CreateModal({ open, onClose, state, onCreated }: { open: boolean; onClo
 
 /* ----------------------------------- NFP ----------------------------------- */
 
+/** NGO role: first pick "my workspace as an empanelled NGO" or "get empanelled"; nothing is pre-selected */
 function NfpWorkspace() {
+  const { persona, ngoMode, regId, setRegId, setNfpId } = useRole();
+  // a remembered application can vanish when the demo server restarts or resets; then offer to register again
+  useEffect(() => {
+    if (ngoMode === 'register' && regId) {
+      api.nfp(regId).catch(() => {
+        setRegId(null);
+        setNfpId(null);
+      });
+    }
+  }, [ngoMode, regId, setRegId, setNfpId]);
+
+  if (!ngoMode) return <NgoChooser />;
+  // wait until the operator the server returns is the one this mode expects, so the other mode's data never flashes
+  const expected = ngoMode === 'empanelled' ? persona?.empanelledNfp?.id : regId;
+  return (
+    <>
+      <NgoSwitch />
+      {ngoMode === 'register' && !regId ? <RegisterNgo /> : !persona || persona.nfp.id !== expected ? <Loading /> : <NfpBody />}
+    </>
+  );
+}
+
+function NgoChooser() {
+  const { chooseNgo, regId } = useRole();
+  const opts = [
+    { mode: 'empanelled' as const, Icon: BadgeCheck, title: 'My workspace as an empanelled NGO', sub: 'Already certified. See your best matches, bid and run your creches.' },
+    { mode: 'register' as const, Icon: FilePlus2, title: regId ? 'Get empanelled: follow my application' : 'Get empanelled', sub: regId ? 'Check where your application is with the Ministry.' : 'New to the network? Register in one click and send it for empanelment.' },
+  ];
+  return (
+    <div className="mx-auto max-w-3xl">
+      <div className="mb-3 text-sm font-bold text-ink">{tr('How do you want to use the network today?')}</div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {opts.map(({ mode, Icon, title, sub }, i) => (
+          <motion.button key={mode} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 * i }} whileHover={{ y: -3 }} whileTap={{ scale: 0.98 }} onClick={() => chooseNgo(mode)}
+            className="group rounded-3xl border border-brand-100 bg-white p-6 text-left shadow-sm transition hover:border-brand-300 hover:shadow-xl hover:shadow-brand-600/10">
+            <span className={cn('grid h-12 w-12 place-items-center rounded-2xl', mode === 'empanelled' ? 'bg-brand-100 text-brand-700' : 'bg-blush-100 text-blush-600')}><Icon className="h-6 w-6" /></span>
+            <div className="mt-4 text-lg font-extrabold leading-tight text-ink">{tr(title)}</div>
+            <p className="mt-1 text-sm text-muted">{tr(sub)}</p>
+            <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-extrabold text-brand-700 group-hover:text-blush-600">{tr('Continue')} <ArrowRight className="h-4 w-4" /></span>
+          </motion.button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** switch between the two NGO views without leaving the workspace */
+function NgoSwitch() {
+  const { ngoMode, chooseNgo } = useRole();
+  return (
+    <div className="mb-4 inline-flex rounded-full bg-brand-100/70 p-0.5 text-xs font-bold" role="group" aria-label={tr('NGO view')}>
+      {([['empanelled', 'My workspace (empanelled)'], ['register', 'Get empanelled']] as const).map(([m, label]) => (
+        <button key={m} onClick={() => chooseNgo(m)} aria-pressed={ngoMode === m} className={cn('rounded-full px-3.5 py-1.5 transition', ngoMode === m ? 'bg-white text-brand-800 shadow' : 'text-brand-700 hover:text-brand-900')}>{tr(label)}</button>
+      ))}
+    </div>
+  );
+}
+
+/** demo registration: every field optional, one button sends the application to the Ministry */
+function RegisterNgo() {
+  const { setRegId, setNfpId, bump } = useRole();
+  const toast = useToast();
+  const [name, setName] = useState('');
+  const [st, setSt] = useState('Odisha');
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    try {
+      const nfp = await api.registerNfp({ name: name.trim() || undefined, state: st });
+      setRegId(nfp.id);
+      setNfpId(nfp.id);
+      toast(tr('Registered. Your application is sent to the Ministry for empanelment.'));
+      bump();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : tr('Failed'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card className="mx-auto max-w-xl">
+      <SectionTitle title={tr('Get empanelled')} sub={tr('Demo registration: fill nothing and press the button. The four documents are marked uploaded and the application goes to the Ministry.')} />
+      <div className="space-y-3">
+        <Field label={tr('NGO name (optional)')}><Input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} placeholder={tr('Leave blank to use a demo name')} /></Field>
+        <Field label={tr('State you work in')}><Select value={st} onChange={(e) => setSt(e.target.value)}>{STATES.map((s) => <option key={s}>{s}</option>)}</Select></Field>
+        <Button className="w-full" variant="pink" loading={busy} icon={<FilePlus2 className="h-4 w-4" />} onClick={go}>{tr('Register and send for empanelment')}</Button>
+      </div>
+    </Card>
+  );
+}
+
+function NfpBody() {
   const { persona, version, bump } = useRole();
   const toast = useToast();
   const prof = useApi(() => (persona ? api.nfp(persona.nfpId) : Promise.resolve(null)), [persona?.nfpId, version]);

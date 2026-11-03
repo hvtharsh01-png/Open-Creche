@@ -14,9 +14,7 @@ import { PartnerLogos } from './components/PartnerLogos';
 import { NotificationBell } from './components/NotificationBell';
 import { RoleInfo } from './components/RoleInfo';
 import { ROLE_ICON, ROLE_TONE } from './components/roleUi';
-import { api } from './lib/api';
 import { ROLE_META, useRole } from './lib/role';
-import { useToast } from './lib/toast';
 import { useT } from './lib/i18n';
 import { cn } from './components/ui';
 
@@ -43,22 +41,10 @@ function Logo() {
   );
 }
 
-/** role menu: NGOs are split into an already-empanelled operator and a brand-new registrant */
-type MenuItem = { key: string; role: Role; mode?: 'empanelled' | 'register'; title: string; sub: string };
-const MENU: MenuItem[] = (Object.keys(ROLE_META) as Role[]).flatMap((r): MenuItem[] =>
-  r === 'nfp'
-    ? [
-        { key: 'nfp-emp', role: r, mode: 'empanelled' as const, title: 'NFP / NGO · Empanelled', sub: 'See best matches and bid' },
-        { key: 'nfp-new', role: r, mode: 'register' as const, title: 'NFP / NGO · New, register', sub: 'Apply for empanelment in one click' },
-      ]
-    : [{ key: r, role: r, title: ROLE_META[r].short, sub: ROLE_META[r].verb }],
-);
-
 /** Shows who you are signed in as. Switching role is a demo convenience; it takes you through the same permissions a real user would have. */
 function RoleSwitcher() {
-  const { role, setRole, signOut, state, persona, setNfpId } = useRole();
+  const { role, setRole, signOut, state } = useRole();
   const { tr } = useT();
-  const toast = useToast();
   const nav = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -96,38 +82,25 @@ function RoleSwitcher() {
             className="absolute right-0 top-[calc(100%+8px)] z-[1100] w-72 rounded-2xl border border-brand-100 bg-white p-2 shadow-2xl"
           >
             <div className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wider text-muted">{tr('Switch role (demo)')}</div>
-            {MENU.map((m) => {
-              const I = ROLE_ICON[m.role];
-              const on = m.role === role && (m.role !== 'nfp' || (m.mode === 'empanelled') === (persona?.nfp?.status === 'certified'));
+            {(Object.keys(ROLE_META) as Role[]).map((r) => {
+              const I = ROLE_ICON[r];
               return (
                 <button
-                  key={m.key}
+                  key={r}
                   role="menuitem"
-                  onClick={async () => {
+                  onClick={() => {
+                    setRole(r);
                     setOpen(false);
-                    if (m.role === 'nfp') {
-                      if (m.mode === 'register') {
-                        try {
-                          const n = await api.registerNfp({});
-                          setNfpId(n.id);
-                          toast(tr('Registered. Your application is sent to the Ministry for empanelment.'));
-                        } catch (e) {
-                          toast(e instanceof Error ? e.message : tr('Failed'), 'error');
-                          return;
-                        }
-                      } else setNfpId(persona?.empanelledNfp?.id ?? null);
-                    }
-                    setRole(m.role);
-                    nav(m.mode === 'register' ? '/workspace' : '/');
+                    nav('/');
                   }}
-                  className={cn('flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-brand-50', on && 'bg-brand-50')}
+                  className={cn('flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-brand-50', role === r && 'bg-brand-50')}
                 >
-                  <span className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-full', ROLE_TONE[m.role])}>
+                  <span className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-full', ROLE_TONE[r])}>
                     <I className="h-4 w-4" />
                   </span>
                   <span className="leading-tight">
-                    <span className="block text-sm font-bold text-ink">{tr(m.title)}</span>
-                    <span className="block text-[11px] text-muted">{tr(m.sub)}</span>
+                    <span className="block text-sm font-bold text-ink">{tr(ROLE_META[r].short)}</span>
+                    <span className="block text-[11px] text-muted">{tr(ROLE_META[r].verb)}</span>
                   </span>
                 </button>
               );

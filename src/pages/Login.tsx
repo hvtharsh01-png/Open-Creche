@@ -2,11 +2,9 @@ import { useState, type FormEvent } from 'react';
 import { tr } from '../lib/i18n';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowRight, Baby, BadgeCheck, Eye, EyeOff, FilePlus2, Heart, Info, Lock, User } from 'lucide-react';
+import { ArrowRight, Baby, Eye, EyeOff, Heart, Info, Lock, User } from 'lucide-react';
 import { STATES, type Role } from '../../shared/types';
-import { api } from '../lib/api';
 import { ROLE_META, useRole } from '../lib/role';
-import { useToast } from '../lib/toast';
 import { useT } from '../lib/i18n';
 import { Button, Field, Input, Select, cn } from '../components/ui';
 import { PartnerLogos } from '../components/PartnerLogos';
@@ -84,8 +82,7 @@ export default function Login() {
   const nav = useNavigate();
   const loc = useLocation();
   const { t, lang, setLang } = useT();
-  const { role: savedRole, enter, setState, setNfpId, state, persona } = useRole();
-  const toast = useToast();
+  const { role: savedRole, enter, setState, state, persona } = useRole();
   const from = (loc.state as { from?: string } | null)?.from ?? '/';
 
   const [choice, setChoice] = useState<Role>(savedRole ?? 'state');
@@ -94,43 +91,23 @@ export default function Login() {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [photo, setPhoto] = useState(true);
-  /** NGOs either sign in as an operator that is already empanelled, or register as a new one */
-  const [ngoMode, setNgoMode] = useState<'empanelled' | 'register'>('empanelled');
-  const [ngoName, setNgoName] = useState('');
-  const [ngoState, setNgoState] = useState('Odisha');
-  const registering = choice === 'nfp' && ngoMode === 'register';
 
   const label = (c: Role) => tr(ROLE_META[c].short);
   const identity = (c: Role) =>
     c === 'state'
       ? `${state} Women & Child Development Dept.`
       : c === 'nfp'
-        ? (registering ? tr('New NGO, registering for empanelment') : persona?.empanelledNfp?.name)
+        ? undefined
         : c === 'csr'
           ? persona?.donor.name
           : c === 'auditor'
             ? persona?.auditor.name
             : tr('Ministry of Women & Child Development, platform team');
 
-  const submit = async (e: FormEvent) => {
+  const submit = (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     // demo sign-in: nothing is checked. A real deployment would use OTP / e-KYC per role.
-    if (registering) {
-      try {
-        // demo registration: every field is optional, the platform fills the rest and sends it for empanelment
-        const nfp = await api.registerNfp({ name: ngoName.trim() || undefined, state: ngoState });
-        setNfpId(nfp.id);
-        enter('nfp');
-        toast(tr('Registered. Your application is sent to the Ministry for empanelment.'));
-        nav('/workspace', { replace: true });
-      } catch (err) {
-        toast(err instanceof Error ? err.message : tr('Failed'), 'error');
-        setBusy(false);
-      }
-      return;
-    }
-    if (choice === 'nfp') setNfpId(persona?.empanelledNfp?.id ?? null);
     setTimeout(() => {
       enter(choice);
       nav(from, { replace: true });
@@ -247,30 +224,11 @@ export default function Login() {
                     <div className="rounded-2xl bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-800">
                       {tr('Signing in as')} <span className="font-extrabold">{identity(choice) ? tr(identity(choice)!) : tr(ROLE_META[choice].label)}</span>
                     </div>
-                    {choice === 'nfp' && (
-                      <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={tr('NGO type')}>
-                        {([['empanelled', 'Empanelled NGO', 'Already certified. See your matches and bid', BadgeCheck], ['register', 'New NGO · Register', 'Apply for empanelment in one click', FilePlus2]] as const).map(([id, title, sub, I]) => (
-                          <button key={id} type="button" role="radio" aria-checked={ngoMode === id} onClick={() => setNgoMode(id)}
-                            className={cn('flex items-start gap-2 rounded-2xl border p-3 text-left transition', ngoMode === id ? 'border-brand-500 bg-white ring-2 ring-brand-500/40' : 'border-brand-100 bg-white hover:border-brand-300')}>
-                            <I className={cn('mt-0.5 h-4 w-4 shrink-0', ngoMode === id ? 'text-brand-700' : 'text-muted')} />
-                            <span className="leading-tight"><span className="block text-xs font-extrabold text-ink">{tr(title)}</span><span className="block text-[11px] text-muted">{tr(sub)}</span></span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
                     {choice === 'state' && (
                       <Field label={tr('State')}>
                         <Select value={state} onChange={(e) => setState(e.target.value)}>{STATES.map((s) => <option key={s}>{s}</option>)}</Select>
                       </Field>
                     )}
-                    {registering ? (
-                      <>
-                        <Field label={tr('NGO name (optional)')}><Input value={ngoName} onChange={(e) => setNgoName(e.target.value)} maxLength={60} placeholder={tr('Leave blank to use a demo name')} /></Field>
-                        <Field label={tr('State you work in')}><Select value={ngoState} onChange={(e) => setNgoState(e.target.value)}>{STATES.map((s) => <option key={s}>{s}</option>)}</Select></Field>
-                        <p className="flex items-start gap-2 text-[11px] text-muted"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {tr('Demo registration: fill nothing and press the button. The four documents are marked uploaded and the application goes to the Ministry.')}</p>
-                      </>
-                    ) : (
-                      <>
                     <Field label={tr('User ID or registered mobile')}>
                       <div className="relative">
                         <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
@@ -287,15 +245,13 @@ export default function Login() {
                       </div>
                     </Field>
                     <p className="flex items-start gap-2 text-[11px] text-muted"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {tr('Demo sign-in: nothing is checked. A real deployment would verify each role with OTP and Aadhaar e-KYC.')}</p>
-                      </>
-                    )}
                   </div>
                 </motion.div>
               }
             </AnimatePresence>
 
             <Button type="submit" loading={busy} className="mt-6 w-full !py-3.5 text-base">
-              {registering ? tr('Register and send for empanelment') : tr('Enter as {role}', { role: label(choice) })} {!busy && <ArrowRight className="h-4 w-4" />}
+              {tr('Enter as {role}', { role: label(choice) })} {!busy && <ArrowRight className="h-4 w-4" />}
             </Button>
           </form>
 

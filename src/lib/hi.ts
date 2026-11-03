@@ -672,4 +672,14 @@ export const HI: Record<string, string> = {
   "Empanelled NGO: see your best matches and bid in every state": "पैनल-शामिल NGO: अपने सबसे अच्छे मिलान देखें और हर राज्य में बोली लगाएँ",
   "New NGO: register in one click and send it for empanelment": "नया NGO: एक क्लिक में पंजीकरण करें और पैनल के लिए भेजें",
   "Empanelled NGOs see their best matches and bid. New NGOs register and wait for the Ministry": "पैनल-शामिल NGO अपने सबसे अच्छे मिलान देखकर बोली लगाते हैं। नए NGO पंजीकरण कर मंत्रालय का इंतज़ार करते हैं",
+  // NGO chooser inside the workspace
+  "How do you want to use the network today?": "आज आप नेटवर्क का उपयोग कैसे करना चाहते हैं?",
+  "Continue": "आगे बढ़ें",
+  "My workspace as an empanelled NGO": "पैनल-शामिल NGO के रूप में मेरा कार्यक्षेत्र",
+  "Already certified. See your best matches, bid and run your creches.": "पहले से प्रमाणित। अपने सबसे अच्छे मिलान देखें, बोली लगाएँ और अपने क्रेच चलाएँ।",
+  "Get empanelled: follow my application": "पैनल में आएँ: मेरा आवेदन देखें",
+  "Check where your application is with the Ministry.": "देखें कि आपका आवेदन मंत्रालय के पास कहाँ तक पहुँचा।",
+  "New to the network? Register in one click and send it for empanelment.": "नेटवर्क पर नए हैं? एक क्लिक में पंजीकरण करें और पैनल के लिए भेजें।",
+  "NGO view": "NGO दृश्य",
+  "My workspace (empanelled)": "मेरा कार्यक्षेत्र (पैनल-शामिल)",
 };

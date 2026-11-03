@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import type { Role } from '../../shared/types';
 import { api, setIdentity, type Persona } from './api';
 
+export type NgoMode = 'empanelled' | 'register';
+
 interface RoleCtx {
   role: Role | null;
   setRole: (r: Role | null) => void;
@@ -9,7 +11,13 @@ interface RoleCtx {
   state: string;
   setState: (s: string) => void;
   persona: Persona | null;
-  /** which operator an NGO user acts as: the empanelled demo NGO or one that just registered (null = server default) */
+  /** inside the NGO role: working as an already-empanelled NGO, or getting empanelled. Not chosen until the NGO picks (null) */
+  ngoMode: NgoMode | null;
+  chooseNgo: (m: NgoMode | null) => void;
+  /** the NGO this browser registered (kept so its application can be followed up) */
+  regId: string | null;
+  setRegId: (id: string | null) => void;
+  /** operator the NGO acts as right now (null = the empanelled demo NGO) */
   nfpId: string | null;
   setNfpId: (id: string | null) => void;
   /** bumps after every write so lists refetch */
@@ -82,7 +90,9 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     return r === 'state' || r === 'nfp' || r === 'csr' || r === 'auditor' || r === 'admin' ? r : null;
   });
   const [state, setStateState] = useState<string>(() => read('oc-state') ?? 'Odisha');
-  const [nfpId, setNfpIdState] = useState<string | null>(() => read('oc-nfp'));
+  const [nfpId, setNfpId] = useState<string | null>(null);
+  const [ngoMode, setNgoMode] = useState<NgoMode | null>(null);
+  const [regId, setRegIdState] = useState<string | null>(() => read('oc-reg'));
   const [persona, setPersona] = useState<Persona | null>(null);
   const [version, setVersion] = useState(0);
   // keep the API client in step with who is signed in (set during render so child requests never go out without it)
@@ -92,14 +102,22 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     api.persona().then(setPersona).catch(() => setPersona(null));
   }, [version, role, nfpId]);
 
-  const setNfpId = useCallback((id: string | null) => {
-    setNfpIdState(id);
-    write('oc-nfp', id);
+  const setRegId = useCallback((id: string | null) => {
+    setRegIdState(id);
+    write('oc-reg', id);
   }, []);
+  const chooseNgo = useCallback((m: NgoMode | null) => {
+    setNgoMode(m);
+    // "get empanelled" follows the application this browser registered; "empanelled" is the certified demo NGO
+    setNfpId(m === 'register' ? regId : null);
+  }, [regId]);
 
   const setRole = useCallback((r: Role | null) => {
     setRoleState(r);
     write('oc-role', r);
+    // every time someone enters the NGO role they choose again, nothing is pre-selected
+    setNgoMode(null);
+    setNfpId(null);
   }, []);
   const setState = useCallback((s: string) => {
     setStateState(s);
@@ -120,8 +138,8 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   }, [setRole]);
 
   const value = useMemo(
-    () => ({ role, setRole, state, setState, persona, nfpId, setNfpId, version, bump, entered, enter, signOut }),
-    [role, setRole, state, setState, persona, nfpId, setNfpId, version, bump, entered, enter, signOut],
+    () => ({ role, setRole, state, setState, persona, ngoMode, chooseNgo, regId, setRegId, nfpId, setNfpId, version, bump, entered, enter, signOut }),
+    [role, setRole, state, setState, persona, ngoMode, chooseNgo, regId, setRegId, nfpId, setNfpId, version, bump, entered, enter, signOut],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
