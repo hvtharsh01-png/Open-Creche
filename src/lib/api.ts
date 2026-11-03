@@ -4,14 +4,14 @@ import type {
 import type { Place } from '../../shared/geo';
 
 /** who is acting: sent with every request so the server can enforce role permissions */
-let identity: { role: Role | null; state: string } = { role: null, state: 'Odisha' };
-export function setIdentity(role: Role | null, state: string) {
-  identity = { role, state };
+let identity: { role: Role | null; state: string; nfpId: string | null } = { role: null, state: 'Odisha', nfpId: null };
+export function setIdentity(role: Role | null, state: string, nfpId: string | null = null) {
+  identity = { role, state, nfpId };
 }
 /** run calls on behalf of another role (the Ministry walkthrough acts as each stakeholder in turn) */
 export async function asRole<T>(role: Role, state: string, fn: () => Promise<T>): Promise<T> {
   const prev = identity;
-  identity = { role, state };
+  identity = { role, state, nfpId: null };
   try {
     return await fn();
   } finally {
@@ -22,6 +22,7 @@ export async function asRole<T>(role: Role, state: string, fn: () => Promise<T>)
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { 'x-state': identity.state };
   if (identity.role) headers['x-role'] = identity.role;
+  if (identity.role === 'nfp' && identity.nfpId) headers['x-nfp'] = identity.nfpId;
   if (body) headers['Content-Type'] = 'application/json';
   const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const data = await res.json().catch(() => ({}));
@@ -37,6 +38,8 @@ export interface Persona {
   auditorId: string;
   state: string;
   nfp: Nfp;
+  /** the already-certified demo operator, for "sign in as an empanelled NGO" */
+  empanelledNfp: Nfp;
   donor: Donor;
   auditor: Auditor;
 }
@@ -92,6 +95,8 @@ export const api = {
   audit: (id: string, b: { auditorId: string; atRisk?: boolean }) => post<OpportunityDetail>(`/api/opportunities/${id}/audit`, b),
   nfp: (id: string) => get<NfpProfile>(`/api/nfps/${id}`),
   checklist: (id: string, key: string, done: boolean) => req<Nfp>('PATCH', `/api/nfps/${id}/checklist`, { key, done }),
+  /** a new NGO signs up; every field is optional and the application goes straight to the Ministry */
+  registerNfp: (b: { name?: string; state?: string }) => post<Nfp>('/api/nfps/register', b),
   submitNfp: (id: string) => post<Nfp>(`/api/nfps/${id}/submit`),
   approveNfp: (id: string) => post<Nfp>(`/api/nfps/${id}/approve`),
   returnNfp: (id: string) => post<Nfp>(`/api/nfps/${id}/return`),

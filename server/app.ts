@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { CHECKLIST, CHILDREN_PER_UNIT, CRECHE_TYPES, STAGES, STATES, stageIndex } from '../shared/types.js';
 import type {
-  AdminOverview, BidView, CommitmentView, CrecheType, Insight, Note, Opportunity, OpportunityDetail, OpportunityView, Priority, Role, Stage, Stats, Task,
+  AdminOverview, Nfp, BidView, CommitmentView, CrecheType, Insight, Note, Opportunity, OpportunityDetail, OpportunityView, Priority, Role, Stage, Stats, Task,
 } from '../shared/types.js';
 import { PLACES, findPlace } from '../shared/geo.js';
 import { PERSONA, db, h01, makeAudit, masterCost, seed } from './data.js';
@@ -76,17 +76,24 @@ function notify(from: Role, to: Role, text: string, opts: { scope?: Note['scope'
 const donorsOf = (oppId: string) => [...new Set(db.commitments.filter((c) => c.opportunityId === oppId).map((c) => c.donorId))];
 const oppLink = (o: Opportunity) => `/opportunity/${o.id}`;
 
-function forViewer(n: Note, role: Role, state?: string): boolean {
+/** which operator an NGO user is acting as: the x-nfp header if it names a real one, else the empanelled demo operator; other roles get the applicant persona */
+function nfpOf(req: express.Request): string {
+  const id = req.header('x-nfp');
+  if (id && db.nfps.some((n) => n.id === id)) return id;
+  return req.header('x-role') === 'nfp' ? PERSONA.empanelledNfpId : PERSONA.nfpId;
+}
+
+function forViewer(n: Note, role: Role, state: string | undefined, nfpId: string): boolean {
   if (n.to !== role) return false;
   const s = n.scope;
   if (!s) return true;
   if (s.state && s.state !== state) return false;
-  if (s.nfpId && s.nfpId !== PERSONA.nfpId) return false;
+  if (s.nfpId && s.nfpId !== nfpId) return false;
   if (s.donorId && s.donorId !== PERSONA.donorId) return false;
   return true;
 }
 
-function detail(o: Opportunity, as?: string): OpportunityDetail {
+function detail(o: Opportunity, as?: string, nfpId: string = PERSONA.nfpId): OpportunityDetail {
   const v = view(o);
   const bids: BidView[] = db.bids
     .filter((b) => b.opportunityId === o.id)
@@ -114,7 +121,7 @@ function detail(o: Opportunity, as?: string): OpportunityDetail {
 
   let myMatch = null;
   if (as === 'nfp') {
-    const nfp = db.nfps.find((n) => n.id === PERSONA.nfpId)!;
+    const nfp = db.nfps.find((n) => n.id === nfpId)!;
     myMatch = scoreForNfp(nfp, o, v.stage, db.bids.some((b) => b.opportunityId === o.id && b.nfpId === nfp.id));
   } else if (as === 'csr') {
     const donor = db.donors.find((d) => d.id === PERSONA.donorId)!;
@@ -128,7 +135,7 @@ function detail(o: Opportunity, as?: string): OpportunityDetail {
     audit,
     awarded,
     myMatch,
-    myBid: db.bids.find((b) => b.opportunityId === o.id && b.nfpId === PERSONA.nfpId) ?? null,
+    myBid: db.bids.find((b) => b.opportunityId === o.id && b.nfpId === nfpId) ?? null,
     myCommittedLakh: db.commitments.filter((c) => c.opportunityId === o.id && c.donorId === PERSONA.donorId).reduce((s, c) => s + c.amountLakh, 0),
     timeline,
   };
@@ -136,10 +143,13 @@ function detail(o: Opportunity, as?: string): OpportunityDetail {
 
 // ---- reference data -------------------------------------------------------------------------
 
-app.get('/api/persona', (_req, res) => {
+app.get('/api/persona', (req, res) => {
+  const nfpId = nfpOf(req);
   res.json({
     ...PERSONA,
-    nfp: db.nfps.find((n) => n.id === PERSONA.nfpId),
+    nfpId,
+    nfp: db.nfps.find((n) => n.id === nfpId),
+    empanelledNfp: db.nfps.find((n) => n.id === PERSONA.empanelledNfpId),
     donor: db.donors.find((d) => d.id === PERSONA.donorId),
     auditor: db.auditors.find((a) => a.id === PERSONA.auditorId),
   });
@@ -161,7 +171,7 @@ app.get('/api/opportunities', (_req, res) => {
 app.get('/api/opportunities/:id', (req, res) => {
   const o = find(req.params.id);
   if (!o) return fail(res, 404, 'Opportunity not found');
-  res.json(detail(o, String(req.query.as ?? '')));
+  res.json(detail(o, String(req.query.as ?? ''), nfpOf(req)));
 });
 
 /** State defines a new opportunity (the "where"). */
@@ -254,7 +264,7 @@ app.post('/api/opportunities/:id/bids', allow('nfp'), (req, res) => {
     createdAt: new Date().toISOString(),
   });
   notify('nfp', 'state', `${nfp.name} bid on "${o.name}". Review bids and award an operator.`, { scope: { state: o.state }, link: oppLink(o) });
-  res.status(201).json(detail(o, 'nfp'));
+  res.status(201).json(detail(o, 'nfp', nfp.id));
 });
 
 // ---- State: award ---------------------------------------------------------------------------
@@ -364,6 +374,39 @@ app.post('/api/nfps/:id/submit', allow('nfp'), (req, res) => {
   nfp.status = 'under_review';
   notify('nfp', 'admin', `${nfp.name} submitted an empanelment application. Review and certify.`, { link: '/workspace' });
   res.json(nfp);
+});
+
+/**
+ * Self-registration of a new NGO. Demo shortcut: every field is optional and anything left blank is filled in,
+ * the four documents are marked uploaded and the application goes straight to the Ministry for empanelment.
+ */
+app.post('/api/nfps/register', (req, res) => {
+  const b = req.body as { name?: string; state?: string };
+  const state = (STATES as readonly string[]).includes(String(b.state)) ? String(b.state) : 'Odisha';
+  const place = PLACES.find((p) => p.state === state) ?? PLACES[0];
+  const n = ++db.seq.nfp;
+  const name = String(b.name ?? '').trim().slice(0, 60) || `Demo NGO ${n} (${state})`;
+  const nfp: Nfp = {
+    id: `nfp-reg-${n}`,
+    name,
+    about: 'New NGO that registered on the network and applied for empanelment.',
+    state,
+    district: place.name,
+    lat: place.lat,
+    lng: place.lng,
+    servesStates: [state],
+    types: ['A', 'B'],
+    costBandLakh: [14, 18],
+    crechesRun: 12,
+    childrenServed: 300,
+    auditScore: 70,
+    freeCapacityUnits: 20,
+    status: 'under_review',
+    checklist: { org: true, work: true, finance: true, staff: true },
+  };
+  db.nfps.push(nfp);
+  notify('nfp', 'admin', `${nfp.name} registered and applied for empanelment. Review and certify.`, { link: '/workspace' });
+  res.status(201).json(nfp);
 });
 
 /** Ministry admin: certify an operator after review. */
@@ -524,14 +567,16 @@ const viewerState = (req: express.Request) => (req.query.state as string) || req
 app.get('/api/notifications', (req, res) => {
   const role = viewerRole(req);
   const state = viewerState(req);
-  const items = db.notes.filter((n) => forViewer(n, role, state)).slice(0, 25);
+  const nfpId = nfpOf(req);
+  const items = db.notes.filter((n) => forViewer(n, role, state, nfpId)).slice(0, 25);
   res.json({ items, unread: items.filter((n) => !n.read).length });
 });
 
 app.post('/api/notifications/read', (req, res) => {
   const role = viewerRole(req);
   const state = viewerState(req);
-  db.notes.filter((n) => forViewer(n, role, state)).forEach((n) => (n.read = true));
+  const nfpId = nfpOf(req);
+  db.notes.filter((n) => forViewer(n, role, state, nfpId)).forEach((n) => (n.read = true));
   res.json({ ok: true });
 });
 
@@ -558,7 +603,7 @@ app.get('/api/tasks', (req, res) => {
   }
 
   if (role === 'nfp') {
-    const nfp = db.nfps.find((n) => n.id === PERSONA.nfpId)!;
+    const nfp = db.nfps.find((n) => n.id === nfpOf(req))!;
     if (nfp.status === 'applied') tasks.push({ id: 't-emp', title: 'Complete your empanelment', text: 'Upload the four documents and submit to the Ministry.', link: '/workspace', tone: 'action' });
     if (nfp.status === 'under_review') tasks.push({ id: 't-emp', title: 'Application with the Ministry', text: 'You can bid once it is approved.', link: '/workspace', tone: 'info' });
     views.filter((v) => v.nfpId === nfp.id && v.stage === 'funded').forEach((v) =>
@@ -627,7 +672,7 @@ app.get('/api/insights', (req, res) => {
       { label: 'Children planned', value: mine.reduce((x, v) => x + v.children, 0), tone: 'blush' },
     );
   } else if (role === 'nfp') {
-    const nfp = db.nfps.find((n) => n.id === PERSONA.nfpId)!;
+    const nfp = db.nfps.find((n) => n.id === nfpOf(req))!;
     const bids = db.bids.filter((b) => b.nfpId === nfp.id);
     const won = views.filter((v) => v.nfpId === nfp.id);
     out.push(

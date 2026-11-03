@@ -20,12 +20,13 @@ export interface DB {
   donors: Donor[];
   auditors: Auditor[];
   notes: Note[];
-  seq: { opp: number; bid: number; com: number; aud: number; note: number };
+  seq: { opp: number; bid: number; com: number; aud: number; note: number; nfp: number };
 }
 
-export const db: DB = { opportunities: [], bids: [], commitments: [], audits: [], nfps: [], donors: [], auditors: [], notes: [], seq: { opp: 0, bid: 0, com: 0, aud: 0, note: 0 } };
+export const db: DB = { opportunities: [], bids: [], commitments: [], audits: [], nfps: [], donors: [], auditors: [], notes: [], seq: { opp: 0, bid: 0, com: 0, aud: 0, note: 0, nfp: 0 } };
 
-export const PERSONA = { nfpId: 'nfp-nanhe', donorId: 'donor-meridian', auditorId: 'aud-1', state: 'Odisha' } as const;
+/** nfpId is the new-applicant persona (also used by the Ministry walkthrough); empanelledNfpId is the already-certified operator */
+export const PERSONA = { nfpId: 'nfp-nanhe', empanelledNfpId: 'nfp-disha', donorId: 'donor-meridian', auditorId: 'aud-1', state: 'Odisha' } as const;
 
 /** Deterministic 0..1 pseudo-random from a string, so reseeding always gives the same demo. */
 export function h01(s: string): number {
@@ -167,7 +168,7 @@ export function makeAudit(opp: Opportunity, auditor: Auditor, issuedAt: string, 
 }
 
 export function seed() {
-  db.seq = { opp: 0, bid: 0, com: 0, aud: 0, note: 0 };
+  db.seq = { opp: 0, bid: 0, com: 0, aud: 0, note: 0, nfp: 0 };
   db.notes = [];
   CRECHE_TYPES.forEach((t) => (masterCost[t.id] = t.standardCostLakh));
   db.bids = [];

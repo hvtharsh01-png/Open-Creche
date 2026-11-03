@@ -9,6 +9,9 @@ interface RoleCtx {
   state: string;
   setState: (s: string) => void;
   persona: Persona | null;
+  /** which operator an NGO user acts as: the empanelled demo NGO or one that just registered (null = server default) */
+  nfpId: string | null;
+  setNfpId: (id: string | null) => void;
   /** bumps after every write so lists refetch */
   version: number;
   bump: () => void;
@@ -38,7 +41,7 @@ const write = (k: string, v: string | null) => {
 
 export const ROLE_META: Record<Role, { label: string; short: string; verb: string; blurb: string }> = {
   state: { label: 'State Government', short: 'State', verb: 'Define where', blurb: 'Set priority locations, creche models and unit costs' },
-  nfp: { label: 'Certified Childcare Operator (NFP / NGO)', short: 'NFP / NGO', verb: 'Deliver how', blurb: 'Get empanelled once, then bid in every state' },
+  nfp: { label: 'Childcare Operator (NFP / NGO)', short: 'NFP / NGO', verb: 'Deliver how', blurb: 'Empanelled NGOs see their best matches and bid. New NGOs register and wait for the Ministry' },
   csr: { label: 'CSR Funder', short: 'CSR funder', verb: 'Fund what', blurb: 'Browse verified demand and commit capital' },
   auditor: { label: 'Independent Auditor', short: 'Auditor', verb: 'Verify impact', blurb: 'Audit utilisation and issue assurance notes' },
   admin: { label: 'Ministry Platform Admin', short: 'Ministry admin', verb: 'Govern the platform', blurb: 'Approve operators, manage master data and oversee all activity' },
@@ -52,7 +55,7 @@ export const ROLE_GUIDE: Record<Role, { does: string[]; gets: string[]; hands: s
     hands: ['Operators and CSR funders are told about every new opportunity', 'The winner, the other bidders and CSR funders are told when you award'],
   },
   nfp: {
-    does: ['Get empanelled once, then bid in every state', 'Start the creches once they are funded', 'See your match score and why'],
+    does: ['Empanelled NGO: see your best matches and bid in every state', 'New NGO: register in one click and send it for empanelment', 'Start the creches once they are funded'],
     gets: ['The Ministry approves your application', 'A new opportunity is published', 'You win a bid, or lose one', 'Funding completes'],
     hands: ['The Ministry is told when you submit your application', 'The State is told when you bid', 'The auditor, State and funders are told when you start'],
   },
@@ -79,14 +82,20 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     return r === 'state' || r === 'nfp' || r === 'csr' || r === 'auditor' || r === 'admin' ? r : null;
   });
   const [state, setStateState] = useState<string>(() => read('oc-state') ?? 'Odisha');
+  const [nfpId, setNfpIdState] = useState<string | null>(() => read('oc-nfp'));
   const [persona, setPersona] = useState<Persona | null>(null);
   const [version, setVersion] = useState(0);
   // keep the API client in step with who is signed in (set during render so child requests never go out without it)
-  setIdentity(role, state);
+  setIdentity(role, state, nfpId);
 
   useEffect(() => {
     api.persona().then(setPersona).catch(() => setPersona(null));
-  }, [version]);
+  }, [version, role, nfpId]);
+
+  const setNfpId = useCallback((id: string | null) => {
+    setNfpIdState(id);
+    write('oc-nfp', id);
+  }, []);
 
   const setRole = useCallback((r: Role | null) => {
     setRoleState(r);
@@ -111,8 +120,8 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   }, [setRole]);
 
   const value = useMemo(
-    () => ({ role, setRole, state, setState, persona, version, bump, entered, enter, signOut }),
-    [role, setRole, state, setState, persona, version, bump, entered, enter, signOut],
+    () => ({ role, setRole, state, setState, persona, nfpId, setNfpId, version, bump, entered, enter, signOut }),
+    [role, setRole, state, setState, persona, nfpId, setNfpId, version, bump, entered, enter, signOut],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

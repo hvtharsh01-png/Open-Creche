@@ -245,9 +245,11 @@ function NfpWorkspace() {
       toast(e instanceof Error ? e.message : tr('Failed'), 'error');
     }
   };
-  const submit = async () => {
+  const submit = async (all = false) => {
     setBusy(true);
     try {
+      // demo shortcut: mark every missing document as uploaded, then send the application
+      if (all) for (const c of CHECKLIST) if (!nfp.checklist[c.key]) await api.checklist(nfp.id, c.key, true);
       await api.submitNfp(nfp.id);
       toast('Application submitted. The Ministry will review it.');
       bump();
@@ -272,6 +274,10 @@ function NfpWorkspace() {
         <Card>
           <SectionTitle title={tr('Empanelment')} sub={nfp.name} right={certified ? <Pill tone="ok"><BadgeCheck className="h-3.5 w-3.5" /> {tr('Certified')}</Pill> : review ? <Pill tone="blush">{tr('Under review')}</Pill> : <Pill tone="blush">{done}/4 done</Pill>} />
           <ProgressBar value={certified || review ? 4 : done} max={4} tone={certified ? 'ok' : 'gradient'} />
+          {certified && <p className="mt-3 rounded-2xl bg-emerald-50 p-3 text-xs font-semibold text-emerald-800">{tr('You are an empanelled NGO. Your best matches are on the right and you can bid in every state.')}</p>}
+          {!certified && !review && (
+            <Button className="mt-4 w-full" variant="pink" loading={busy} icon={<FileUp className="h-4 w-4" />} onClick={() => submit(true)}>{tr('Register in one click (demo)')}</Button>
+          )}
           <ul className="mt-4 space-y-2">
             {CHECKLIST.map((c) => {
               const on = nfp.checklist[c.key];
@@ -289,7 +295,7 @@ function NfpWorkspace() {
               );
             })}
           </ul>
-          {!certified && !review && <Button className="mt-4 w-full" loading={busy} disabled={done < 4} onClick={submit}>{tr('Submit for empanelment')}</Button>}
+          {!certified && !review && <Button className="mt-2 w-full" variant="ghost" loading={busy} disabled={done < 4} onClick={() => submit()}>{tr('Submit for empanelment')}</Button>}
           {review && <Button className="mt-4 w-full" variant="ghost" disabled>{tr('Submitted. Waiting for the Ministry')}</Button>}
           <p className="mt-2 text-[11px] text-muted">{certified ? 'Your certification works in all states.' : review ? 'The Ministry (platform owner) checks your documents. In production an independent audit firm also verifies the NFP.' : tr('Upload all four items, then submit. The Ministry approves operators before they can bid.')}</p>
         </Card>
@@ -297,7 +303,7 @@ function NfpWorkspace() {
         <div className="space-y-5">
           <Card>
             <SectionTitle title={tr('Recommended for you')} sub={tr('Ranked by area, model experience, track record, capacity and cost fit')} right={<Link to="/explore" className="text-xs font-bold text-brand-700 hover:text-blush-600">{tr('Browse all')}</Link>} />
-            {!certified ? <Empty title={tr('Get empanelled to see matches')} /> : rec.loading ? <Loading /> : picks.length === 0 ? <Empty title={tr('No open opportunities right now')} /> : (
+            {!certified ? <Empty title={review ? tr('Matches unlock once the Ministry approves you') : tr('Get empanelled to see matches')} sub={review ? tr('Your application is with the Ministry. Switch to Ministry admin to approve it in this demo.') : undefined} /> : rec.loading ? <Loading /> : picks.length === 0 ? <Empty title={tr('No open opportunities right now')} /> : (
               <div className="grid gap-3 md:grid-cols-2">{picks.slice(0, 4).map((r, i) => <OpportunityCard key={r.opportunity.id} opp={r.opportunity} match={r.match} index={i} />)}</div>
             )}
           </Card>
